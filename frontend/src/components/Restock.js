@@ -1,0 +1,1 @@
+export { Restock as default } from './OtherComponents';x``
