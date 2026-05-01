@@ -8,21 +8,23 @@ import Suppliers from './components/Suppliers';
 import Restock from './components/Restock';
 import Transactions from './components/Transactions';
 import './App.css';
+import UsersAdmin from './components/UsersAdmin';
 
-const navItems = [
-  { id: 'dashboard',    label: 'Dashboard',    icon: '📊' },
-  { id: 'medicines',    label: 'Medicines',    icon: '💊' },
-  { id: 'sales',        label: 'Sales',        icon: '🛒' },
-  { id: 'customers',    label: 'Customers',    icon: '👤' },
-  { id: 'suppliers',    label: 'Suppliers',    icon: '🏭' },
-  { id: 'restock',      label: 'Restock',      icon: '📦' },
-  { id: 'transactions', label: 'Transactions', icon: '📋' },
+const allNavItems = [
+  { id: 'dashboard',    label: 'Dashboard',    icon: '📊', roles: ['admin', 'staff'] },
+  { id: 'medicines',    label: 'Medicines',    icon: '💊', roles: ['admin', 'staff'] },
+  { id: 'sales',        label: 'Sales',        icon: '🛒', roles: ['admin', 'staff'] },
+  { id: 'customers',    label: 'Customers',    icon: '👤', roles: ['admin', 'staff'] },
+  { id: 'suppliers',    label: 'Suppliers',    icon: '🏭', roles: ['admin'] },
+  { id: 'restock',      label: 'Restock',      icon: '📦', roles: ['admin', 'staff'] },
+  { id: 'transactions', label: 'Transactions', icon: '📋', roles: ['admin'] },
+  { id: 'users',        label: 'Manage Users', icon: '👥', roles: ['admin'] },
 ];
 
 function App() {
   const [user, setUser] = useState(null);
   const [activePage, setActivePage] = useState('dashboard');
-
+  const navItems = allNavItems.filter(item => item.roles.includes(user?.Role));
   useEffect(() => {
     const saved = localStorage.getItem('pharmacare_user');
     if (saved) setUser(JSON.parse(saved));
@@ -37,18 +39,27 @@ function App() {
 
   if (!user) return <AuthPage onLogin={handleLogin} />;
 
-  const renderPage = () => {
-    switch (activePage) {
-      case 'dashboard':    return <Dashboard />;
-      case 'medicines':    return <Medicines />;
-      case 'sales':        return <Sales />;
-      case 'customers':    return <Customers />;
-      case 'suppliers':    return <Suppliers />;
-      case 'restock':      return <Restock />;
-      case 'transactions': return <Transactions />;
-      default:             return <Dashboard />;
-    }
-  };
+ const renderPage = () => {
+  const role = user?.Role;
+
+  // Staff trying to access admin-only page — redirect
+  const adminOnly = ['suppliers', 'transactions', 'users'];
+  if (role !== 'admin' && adminOnly.includes(activePage)) {
+    return <Dashboard user={user} />;
+  }
+
+  switch (activePage) {
+    case 'dashboard':    return <Dashboard user={user} />;
+    case 'medicines':    return <Medicines user={user} />;
+    case 'sales':        return <Sales user={user} />;
+    case 'customers':    return <Customers user={user} />;
+    case 'suppliers':    return <Suppliers user={user} />;
+    case 'restock':      return <Restock user={user} />;
+    case 'transactions': return <Transactions user={user} />;
+    case 'users':        return <UsersAdmin user={user} />;
+    default:             return <Dashboard user={user} />;
+  }
+};
 
   return (
     <div className="app-container">

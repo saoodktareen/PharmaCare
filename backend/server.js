@@ -14,6 +14,15 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// ─── Role Guard Middleware ─────────────────────────────────
+const requireAdmin = (req, res, next) => {
+  const role = req.headers['x-user-role'];
+  if (role !== 'admin') {
+    return res.status(403).json({ error: 'Access denied. Admins only.' });
+  }
+  next();
+};
+
 // ─── Database Configuration ───────────────────────────────────────────────────
 // Credentials come from the .env file — never hardcoded
 // If you are the teacher/grader: copy .env.example → .env and fill in your SQL Server details
@@ -101,7 +110,14 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
-
+app.get('/api/auth/users', requireAdmin, async (req, res) => {
+  try {
+    const pool = await poolPromise;
+    const result = await pool.request()
+      .query('SELECT UserID, FullName, Email, Role FROM Users');
+    res.json(result.recordset);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 // ═══════════════════════════════════════════════════════════
 //  MEDICINES ROUTES
 // ═══════════════════════════════════════════════════════════
@@ -121,7 +137,7 @@ app.get('/api/medicines', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/medicines/low-stock', async (req, res) => {
+app.get('/api/medicines/low-stock',requireAdmin, async (req, res) => {
     try {
         const pool = await poolPromise;
         const result = await pool.request().query(`
@@ -143,7 +159,7 @@ app.get('/api/medicines/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/medicines', async (req, res) => {
+app.post('/api/medicines', requireAdmin,async (req, res) => {
     const { MedicineName, CategoryID, SupplierID, BatchNumber, ExpiryDate, Price, StockLevel, MinimumStockLevel } = req.body;
     try {
         const pool = await poolPromise;
@@ -164,7 +180,7 @@ app.post('/api/medicines', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/medicines/:id', async (req, res) => {
+app.put('/api/medicines/:id', requireAdmin,async (req, res) => {
     const { MedicineName, Price, StockLevel, CategoryID, SupplierID, BatchNumber, ExpiryDate, MinimumStockLevel } = req.body;
     try {
         const pool = await poolPromise;
@@ -189,7 +205,7 @@ app.put('/api/medicines/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/medicines/:id', async (req, res) => {
+app.delete('/api/medicines/:id', requireAdmin,async (req, res) => {
     try {
         const pool = await poolPromise;
         await pool.request()
@@ -237,7 +253,7 @@ app.get('/api/suppliers', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/suppliers', async (req, res) => {
+app.post('/api/suppliers', requireAdmin,async (req, res) => {
     const { SupplierName, Phone, Email, Address } = req.body;
     try {
         const pool = await poolPromise;
@@ -347,7 +363,7 @@ app.post('/api/restock', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/restock/:id', async (req, res) => {
+app.put('/api/restock/:id',requireAdmin, async (req, res) => {
     const { Status } = req.body;
     try {
         const pool = await poolPromise;

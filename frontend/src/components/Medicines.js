@@ -6,15 +6,17 @@ const emptyForm = {
   ExpiryDate: '', Price: '', StockLevel: '', MinimumStockLevel: '10'
 };
 
-function Medicines() {
+function Medicines({ user }) {  // ✅ FIX 1: Accept user as prop
   const [medicines, setMedicines] = useState([]);
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [form, setForm] = useState(emptyForm);
-  const [editingID, setEditingID] = useState(null); // null = adding, number = editing
+  const [editingID, setEditingID] = useState(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [showForm, setShowForm] = useState(false);
+
+  const isAdmin = user?.Role === 'admin';  // ✅ FIX 2: Moved here, after prop is received
 
   const load = () => {
     setLoading(true);
@@ -37,11 +39,13 @@ function Medicines() {
     setTimeout(() => setMessage(''), 4000);
   };
 
-  // ── Add new medicine ──────────────────────────────────────
   const handleAdd = async () => {
     const res = await fetch(`${API}/medicines`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-role': user?.Role || 'staff'  // ✅ Send role header
+      },
       body: JSON.stringify(form)
     });
     const data = await res.json();
@@ -49,7 +53,6 @@ function Medicines() {
     if (res.ok) { setForm(emptyForm); setShowForm(false); load(); }
   };
 
-  // ── Start editing — pre-fill the form ────────────────────
   const startEdit = (m) => {
     setEditingID(m.MedicineID);
     setForm({
@@ -66,11 +69,13 @@ function Medicines() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // ── Save edit ─────────────────────────────────────────────
   const handleEdit = async () => {
     const res = await fetch(`${API}/medicines/${editingID}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-role': user?.Role || 'staff'  // ✅ Send role header
+      },
       body: JSON.stringify(form)
     });
     const data = await res.json();
@@ -78,10 +83,12 @@ function Medicines() {
     if (res.ok) { setForm(emptyForm); setEditingID(null); setShowForm(false); load(); }
   };
 
-  // ── Delete ────────────────────────────────────────────────
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this medicine?')) return;
-    const res = await fetch(`${API}/medicines/${id}`, { method: 'DELETE' });
+    const res = await fetch(`${API}/medicines/${id}`, {
+      method: 'DELETE',
+      headers: { 'x-user-role': user?.Role || 'staff' }  // ✅ Send role header
+    });
     const data = await res.json();
     showMsg(data.message || data.error);
     load();
@@ -97,6 +104,7 @@ function Medicines() {
 
   if (loading) return <div className="loading">Loading medicines</div>;
 
+  // ✅ FIX 3: Only ONE return statement now
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
@@ -104,9 +112,12 @@ function Medicines() {
           <h1 className="page-title">Medicines</h1>
           <p className="page-subtitle">{medicines.length} medicines in inventory</p>
         </div>
-        <button className="btn btn-primary" onClick={() => { cancelForm(); setShowForm(s => !s); }}>
-          {showForm && !editingID ? '✕ Cancel' : '+ Add Medicine'}
-        </button>
+        {/* ✅ Only admins see Add button */}
+        {isAdmin && (
+          <button className="btn btn-primary" onClick={() => { cancelForm(); setShowForm(s => !s); }}>
+            {showForm && !editingID ? '✕ Cancel' : '+ Add Medicine'}
+          </button>
+        )}
       </div>
 
       {message && (
@@ -115,8 +126,8 @@ function Medicines() {
         </div>
       )}
 
-      {/* ── Add / Edit Form ── */}
-      {showForm && (
+      {/* Add / Edit Form — admin only */}
+      {showForm && isAdmin && (
         <div className="form-panel">
           <div className="form-panel-title">
             {editingID ? `✏️ Editing Medicine #${editingID}` : '➕ Add New Medicine'}
@@ -170,7 +181,7 @@ function Medicines() {
         </div>
       )}
 
-      {/* ── Table ── */}
+      {/* Table */}
       <div className="panel">
         <div className="panel-header">
           <span className="panel-title">💊 All Medicines</span>
@@ -180,7 +191,9 @@ function Medicines() {
             <thead>
               <tr>
                 <th>ID</th><th>Medicine</th><th>Category</th><th>Supplier</th>
-                <th>Batch</th><th>Expiry</th><th>Price</th><th>Stock</th><th>Actions</th>
+                <th>Batch</th><th>Expiry</th><th>Price</th><th>Stock</th>
+                {/* ✅ Only show Actions column header to admins */}
+                {isAdmin && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -198,12 +211,15 @@ function Medicines() {
                       ? <span className="badge badge-low">{m.StockLevel}</span>
                       : <span style={{ color: 'var(--green)' }}>{m.StockLevel}</span>}
                   </td>
-                  <td>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button className="btn btn-ghost btn-sm" onClick={() => startEdit(m)}>✏️ Edit</button>
-                      <button className="btn btn-danger btn-sm" onClick={() => handleDelete(m.MedicineID)}>Delete</button>
-                    </div>
-                  </td>
+                  {/* ✅ Only admins see Edit/Delete buttons */}
+                  {isAdmin && (
+                    <td>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="btn btn-ghost btn-sm" onClick={() => startEdit(m)}>✏️ Edit</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => handleDelete(m.MedicineID)}>Delete</button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
