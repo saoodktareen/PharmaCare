@@ -23,10 +23,8 @@ function Dashboard() {
 
   return (
     <div>
-      <div>
-        <h1 className="page-title">Dashboard</h1>
-        <p className="page-subtitle">Pharmacy Inventory Overview</p>
-      </div>
+      <h1 className="page-title">Dashboard</h1>
+      <p className="page-subtitle">Pharmacy Inventory Overview</p>
 
       <div className="stats-grid" style={{ marginTop: 24 }}>
         <div className="stat-card blue">
@@ -54,9 +52,19 @@ function Dashboard() {
           <div className="stat-value">{stats.pendingRestock}</div>
           <div className="stat-label">Pending Restocks</div>
         </div>
+        <div className="stat-card blue">
+          <span className="stat-icon">👤</span>
+          <div className="stat-value">{stats.totalCustomers}</div>
+          <div className="stat-label">Total Customers</div>
+        </div>
+        <div className="stat-card amber">
+          <span className="stat-icon">🏭</span>
+          <div className="stat-value">{stats.totalSuppliers}</div>
+          <div className="stat-label">Total Suppliers</div>
+        </div>
       </div>
 
-      {lowStock.length > 0 && (
+      {lowStock.length > 0 ? (
         <div className="panel">
           <div className="panel-header">
             <span className="panel-title">⚠️ Low Stock Alerts</span>
@@ -85,9 +93,7 @@ function Dashboard() {
             </table>
           </div>
         </div>
-      )}
-
-      {lowStock.length === 0 && stats && (
+      ) : (
         <div className="panel">
           <div className="panel-header">
             <span className="panel-title">✅ Stock Status</span>
