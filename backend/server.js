@@ -1,4 +1,4 @@
-require('dotenv').config(); // Must be first line
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const sql = require('mssql');
@@ -14,18 +14,16 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// ─── Role Guard Middleware ─────────────────────────────────
+// ─── Role Guard Middleware ────────────────────────────────────────────────────
 const requireAdmin = (req, res, next) => {
-  const role = req.headers['x-user-role'];
-  if (role !== 'admin') {
-    return res.status(403).json({ error: 'Access denied. Admins only.' });
-  }
-  next();
+    const role = req.headers['x-user-role'];
+    if (role !== 'admin') {
+        return res.status(403).json({ error: 'Access denied. Admins only.' });
+    }
+    next();
 };
 
 // ─── Database Configuration ───────────────────────────────────────────────────
-// Credentials come from the .env file — never hardcoded
-// If you are the teacher/grader: copy .env.example → .env and fill in your SQL Server details
 const dbConfig = {
     server: process.env.DB_SERVER || 'localhost',
     database: process.env.DB_NAME || 'PharmacyInventoryDB',
@@ -46,16 +44,14 @@ const poolPromise = new sql.ConnectionPool(dbConfig)
     })
     .catch(err => {
         console.error('❌ Database connection failed:', err.message);
-        console.error('👉 Check your .env file — make sure DB_SERVER, DB_USER, DB_PASSWORD are correct');
         process.exit(1);
     });
 
 
 // ═══════════════════════════════════════════════════════════
-//  AUTH ROUTES (Login / Register)
+//  AUTH ROUTES
 // ═══════════════════════════════════════════════════════════
 
-// POST — Register new user
 app.post('/api/auth/register', async (req, res) => {
     const { FullName, Email, Password, Role } = req.body;
     if (!FullName || !Email || !Password) {
@@ -63,31 +59,21 @@ app.post('/api/auth/register', async (req, res) => {
     }
     try {
         const pool = await poolPromise;
-
-        // Check if email already exists
-        const existing = await pool.request()
-            .input('Email', sql.VarChar, Email)
-            .query('SELECT UserID FROM Users WHERE Email = @Email');
-        if (existing.recordset.length > 0) {
-            return res.status(409).json({ error: 'Email already registered' });
-        }
-
-        await pool.request()
+        const result = await pool.request()
             .input('FullName', sql.VarChar, FullName)
             .input('Email', sql.VarChar, Email)
             .input('Password', sql.VarChar, Password)
             .input('Role', sql.VarChar, Role || 'staff')
-            .query(`
-                INSERT INTO Users (FullName, Email, Password, Role)
-                VALUES (@FullName, @Email, @Password, @Role)
-            `);
+            .execute('sp_RegisterUser');
         res.status(201).json({ message: 'Account created successfully' });
     } catch (err) {
+        if (err.message.includes('already registered')) {
+            return res.status(409).json({ error: 'Email already registered' });
+        }
         res.status(500).json({ error: err.message });
     }
 });
 
-// POST — Login
 app.post('/api/auth/login', async (req, res) => {
     const { Email, Password } = req.body;
     if (!Email || !Password) {
@@ -98,26 +84,32 @@ app.post('/api/auth/login', async (req, res) => {
         const result = await pool.request()
             .input('Email', sql.VarChar, Email)
             .input('Password', sql.VarChar, Password)
-            .query('SELECT UserID, FullName, Email, Role FROM Users WHERE Email = @Email AND Password = @Password');
-
+            .execute('sp_LoginUser');
         if (result.recordset.length === 0) {
             return res.status(401).json({ error: 'Invalid email or password' });
         }
         const user = result.recordset[0];
         res.json({ message: 'Login successful', user });
     } catch (err) {
+        if (err.message.includes('Email not found') || err.message.includes('Incorrect password')) {
+            return res.status(401).json({ error: 'Invalid email or password' });
+        }
         res.status(500).json({ error: err.message });
     }
 });
 
 app.get('/api/auth/users', requireAdmin, async (req, res) => {
-  try {
-    const pool = await poolPromise;
-    const result = await pool.request()
-      .query('SELECT UserID, FullName, Email, Role FROM Users');
-    res.json(result.recordset);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .query('SELECT UserID, FullName, Email, Role FROM Users');
+        res.json(result.recordset);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
+
+
 // ═══════════════════════════════════════════════════════════
 //  MEDICINES ROUTES
 // ═══════════════════════════════════════════════════════════
@@ -137,7 +129,7 @@ app.get('/api/medicines', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/medicines/low-stock',requireAdmin, async (req, res) => {
+app.get('/api/medicines/low-stock', async (req, res) => {
     try {
         const pool = await poolPromise;
         const result = await pool.request().query(`
@@ -159,7 +151,7 @@ app.get('/api/medicines/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/medicines', requireAdmin,async (req, res) => {
+app.post('/api/medicines', requireAdmin, async (req, res) => {
     const { MedicineName, CategoryID, SupplierID, BatchNumber, ExpiryDate, Price, StockLevel, MinimumStockLevel } = req.body;
     try {
         const pool = await poolPromise;
@@ -172,47 +164,59 @@ app.post('/api/medicines', requireAdmin,async (req, res) => {
             .input('Price', sql.Decimal(10, 2), Price)
             .input('StockLevel', sql.Int, StockLevel)
             .input('MinimumStockLevel', sql.Int, MinimumStockLevel || 10)
-            .query(`
-                INSERT INTO Medicines (MedicineName, CategoryID, SupplierID, BatchNumber, ExpiryDate, Price, StockLevel, MinimumStockLevel)
-                VALUES (@MedicineName, @CategoryID, @SupplierID, @BatchNumber, @ExpiryDate, @Price, @StockLevel, @MinimumStockLevel)
-            `);
+            .execute('sp_AddMedicine');
         res.status(201).json({ message: 'Medicine added successfully' });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        if (err.message.includes('already exists')) {
+            return res.status(409).json({ error: 'Medicine with this name already exists' });
+        }
+        if (err.message.includes('Expiry')) {
+            return res.status(400).json({ error: 'Expiry date must be in the future' });
+        }
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.put('/api/medicines/:id', requireAdmin,async (req, res) => {
+app.put('/api/medicines/:id', requireAdmin, async (req, res) => {
     const { MedicineName, Price, StockLevel, CategoryID, SupplierID, BatchNumber, ExpiryDate, MinimumStockLevel } = req.body;
     try {
         const pool = await poolPromise;
         await pool.request()
-            .input('id', sql.Int, req.params.id)
+            .input('MedicineID', sql.Int, req.params.id)
             .input('MedicineName', sql.VarChar, MedicineName)
-            .input('Price', sql.Decimal(10, 2), Price)
-            .input('StockLevel', sql.Int, StockLevel)
             .input('CategoryID', sql.Int, CategoryID)
             .input('SupplierID', sql.Int, SupplierID)
             .input('BatchNumber', sql.VarChar, BatchNumber)
             .input('ExpiryDate', sql.Date, ExpiryDate)
+            .input('Price', sql.Decimal(10, 2), Price)
+            .input('StockLevel', sql.Int, StockLevel)
             .input('MinimumStockLevel', sql.Int, MinimumStockLevel)
-            .query(`
-                UPDATE Medicines 
-                SET MedicineName=@MedicineName, Price=@Price, StockLevel=@StockLevel,
-                    CategoryID=@CategoryID, SupplierID=@SupplierID, BatchNumber=@BatchNumber,
-                    ExpiryDate=@ExpiryDate, MinimumStockLevel=@MinimumStockLevel
-                WHERE MedicineID=@id
-            `);
+            .execute('sp_UpdateMedicine');
         res.json({ message: 'Medicine updated successfully' });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        if (err.message.includes('not found')) {
+            return res.status(404).json({ error: 'Medicine not found' });
+        }
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.delete('/api/medicines/:id', requireAdmin,async (req, res) => {
+app.delete('/api/medicines/:id', requireAdmin, async (req, res) => {
     try {
         const pool = await poolPromise;
         await pool.request()
-            .input('id', sql.Int, req.params.id)
-            .query('DELETE FROM Medicines WHERE MedicineID = @id');
+            .input('MedicineID', sql.Int, req.params.id)
+            .execute('sp_DeleteMedicine');
         res.json({ message: 'Medicine deleted successfully' });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        if (err.message.includes('sales records')) {
+            return res.status(400).json({ error: 'Cannot delete medicine — it has existing sales records' });
+        }
+        if (err.message.includes('restock orders')) {
+            return res.status(400).json({ error: 'Cannot delete medicine — it has pending restock orders' });
+        }
+        res.status(500).json({ error: err.message });
+    }
 });
 
 
@@ -228,7 +232,7 @@ app.get('/api/categories', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/categories', async (req, res) => {
+app.post('/api/categories', requireAdmin, async (req, res) => {
     const { CategoryName, Description } = req.body;
     try {
         const pool = await poolPromise;
@@ -253,7 +257,7 @@ app.get('/api/suppliers', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/suppliers', requireAdmin,async (req, res) => {
+app.post('/api/suppliers', requireAdmin, async (req, res) => {
     const { SupplierName, Phone, Email, Address } = req.body;
     try {
         const pool = await poolPromise;
@@ -322,12 +326,39 @@ app.post('/api/sales', async (req, res) => {
             .input('CustomerID', sql.Int, CustomerID)
             .input('QuantitySold', sql.Int, QuantitySold)
             .input('TotalAmount', sql.Decimal(10, 2), TotalAmount)
-            .query(`
-                INSERT INTO Sales (MedicineID, CustomerID, QuantitySold, TotalAmount)
-                VALUES (@MedicineID, @CustomerID, @QuantitySold, @TotalAmount)
-            `);
+            .execute('sp_RecordSale');
         res.status(201).json({ message: 'Sale recorded successfully' });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        if (err.message.includes('Insufficient stock')) {
+            return res.status(400).json({ error: 'Insufficient stock for this medicine' });
+        }
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST — bulk sale (multiple medicines, one customer)
+app.post('/api/sales/bulk', async (req, res) => {
+    const { CustomerID, items } = req.body;
+    if (!CustomerID || !items || items.length === 0) {
+        return res.status(400).json({ error: 'Customer and at least one item are required' });
+    }
+    try {
+        const pool = await poolPromise;
+        for (const item of items) {
+            await pool.request()
+                .input('MedicineID', sql.Int, item.MedicineID)
+                .input('CustomerID', sql.Int, CustomerID)
+                .input('QuantitySold', sql.Int, item.QuantitySold)
+                .input('TotalAmount', sql.Decimal(10, 2), item.TotalAmount)
+                .execute('sp_RecordSale'); // ✅ now calls procedure for each item
+        }
+        res.status(201).json({ message: `Sale recorded — ${items.length} item(s) added successfully` });
+    } catch (err) {
+        if (err.message.includes('Insufficient stock')) {
+            return res.status(400).json({ error: 'Insufficient stock for one or more medicines' });
+        }
+        res.status(500).json({ error: err.message });
+    }
 });
 
 
@@ -355,24 +386,32 @@ app.post('/api/restock', async (req, res) => {
         await pool.request()
             .input('MedicineID', sql.Int, MedicineID)
             .input('ReorderQuantity', sql.Int, ReorderQuantity)
-            .query(`
-                INSERT INTO Restock (MedicineID, ReorderQuantity, Status)
-                VALUES (@MedicineID, @ReorderQuantity, 'PENDING')
-            `);
+            .execute('sp_RestockMedicine');
         res.status(201).json({ message: 'Restock order created successfully' });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        if (err.message.includes('not found')) {
+            return res.status(404).json({ error: 'Medicine not found' });
+        }
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.put('/api/restock/:id',requireAdmin, async (req, res) => {
-    const { Status } = req.body;
+app.put('/api/restock/:id', requireAdmin, async (req, res) => {
     try {
         const pool = await poolPromise;
         await pool.request()
-            .input('id', sql.Int, req.params.id)
-            .input('Status', sql.VarChar, Status)
-            .query('UPDATE Restock SET Status = @Status WHERE ReorderID = @id');
-        res.json({ message: 'Restock status updated' });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+            .input('ReorderID', sql.Int, req.params.id)
+            .execute('sp_ApproveRestock');
+        res.json({ message: 'Restock approved and stock updated' });
+    } catch (err) {
+        if (err.message.includes('already approved')) {
+            return res.status(400).json({ error: 'Restock order already approved' });
+        }
+        if (err.message.includes('not found')) {
+            return res.status(404).json({ error: 'Restock order not found' });
+        }
+        res.status(500).json({ error: err.message });
+    }
 });
 
 
@@ -396,28 +435,14 @@ app.get('/api/transactions', async (req, res) => {
 
 
 // ═══════════════════════════════════════════════════════════
-//  DASHBOARD SUMMARY ROUTE
+//  DASHBOARD ROUTE
 // ═══════════════════════════════════════════════════════════
 
 app.get('/api/dashboard', async (req, res) => {
     try {
         const pool = await poolPromise;
-        const totalMedicines = await pool.request().query('SELECT COUNT(*) AS count FROM Medicines');
-        const totalSales     = await pool.request().query('SELECT COUNT(*) AS count, SUM(TotalAmount) AS revenue FROM Sales');
-        const lowStock       = await pool.request().query('SELECT COUNT(*) AS count FROM Medicines WHERE StockLevel < MinimumStockLevel');
-        const pendingRestock = await pool.request().query("SELECT COUNT(*) AS count FROM Restock WHERE Status = 'PENDING'");
-        const totalCustomers = await pool.request().query('SELECT COUNT(*) AS count FROM Customers');
-        const totalSuppliers = await pool.request().query('SELECT COUNT(*) AS count FROM Suppliers');
-
-        res.json({
-            totalMedicines:  totalMedicines.recordset[0].count,
-            totalSales:      totalSales.recordset[0].count,
-            totalRevenue:    totalSales.recordset[0].revenue,
-            lowStockCount:   lowStock.recordset[0].count,
-            pendingRestock:  pendingRestock.recordset[0].count,
-            totalCustomers:  totalCustomers.recordset[0].count,
-            totalSuppliers:  totalSuppliers.recordset[0].count,
-        });
+        const result = await pool.request().execute('sp_GetDashboard');
+        res.json(result.recordset[0]);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
