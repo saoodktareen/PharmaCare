@@ -34,7 +34,7 @@ function AuthPage({ onLogin }) {
         alert('Account created! Please log in.');
       } else {
         // Store user in localStorage so they stay logged in on refresh
-        localStorage.setItem('pharmacare_user', JSON.stringify(data.user));
+        sessionStorage.setItem('pharmacare_user', JSON.stringify(data.user));
         onLogin(data.user);
       }
     } catch {

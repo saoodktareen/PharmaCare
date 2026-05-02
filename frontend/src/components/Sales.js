@@ -133,7 +133,7 @@ function Sales() {
           {/* Medicine rows */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
             {items.map((item, index) => {
-              const selectedMed = medicines.find(m => m.MedicineID === parseInt(item.MedicineID));
+              medicines.find(m => m.MedicineID === parseInt(item.MedicineID));
               return (
                 <div key={index} style={{
                   display: 'grid',

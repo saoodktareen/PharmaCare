@@ -26,13 +26,13 @@ function App() {
   const [activePage, setActivePage] = useState('dashboard');
   const navItems = allNavItems.filter(item => item.roles.includes(user?.Role));
   useEffect(() => {
-    const saved = localStorage.getItem('pharmacare_user');
+    const saved = sessionStorage.getItem('pharmacare_user');
     if (saved) setUser(JSON.parse(saved));
   }, []);
 
   const handleLogin  = (userData) => setUser(userData);
   const handleLogout = () => {
-    localStorage.removeItem('pharmacare_user');
+    sessionStorage.removeItem('pharmacare_user');
     setUser(null);
     setActivePage('dashboard');
   };
