@@ -1,11 +1,47 @@
 -- ============================================================
 --  PharmaCare Inventory Management System
---  All Stored Procedures & Triggers
+--  All Stored Procedures & Triggers — v2 (fully updated)
 --  Run this entire file in SSMS against PharmacyInventoryDB
 -- ============================================================
 
 USE PharmacyInventoryDB;
 GO
+
+-- ============================================================
+--  FIX: Update Restock Status constraint to allow
+--       APPROVED and CANCELLED in addition to old values
+-- ============================================================
+IF EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.CHECK_CONSTRAINTS
+    WHERE CONSTRAINT_NAME = 'CK__Restock__Status__787EE5A0'
+)
+BEGIN
+    ALTER TABLE Restock DROP CONSTRAINT CK__Restock__Status__787EE5A0;
+END
+GO
+
+IF EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.CHECK_CONSTRAINTS
+    WHERE CONSTRAINT_NAME = 'CK_Restock_Status'
+)
+BEGIN
+    ALTER TABLE Restock DROP CONSTRAINT CK_Restock_Status;
+END
+GO
+
+ALTER TABLE Restock
+ADD CONSTRAINT CK_Restock_Status
+CHECK (Status IN ('PENDING', 'APPROVED', 'CANCELLED', 'ORDERED', 'RECEIVED'));
+GO
+
+-- ============================================================
+--  FIX: Allow NULL in Transactions.SaleID
+--       so restock entries don't require a SaleID
+-- ============================================================
+ALTER TABLE Transactions
+ALTER COLUMN SaleID INT NULL;
+GO
+
 
 -- ============================================================
 --  1. sp_LoginUser
@@ -310,6 +346,7 @@ BEGIN
         -- Force delete: remove related records first
         IF @Force = 1
         BEGIN
+            DELETE FROM Transactions WHERE MedicineID = @MedicineID
             DELETE FROM Sales WHERE MedicineID = @MedicineID
             DELETE FROM Restock WHERE MedicineID = @MedicineID
         END
@@ -359,13 +396,6 @@ BEGIN
             RETURN
         END
 
-        IF (SELECT StockLevel FROM Medicines WHERE MedicineID = @MedicineID) < @QuantitySold
-        BEGIN
-            ROLLBACK
-            RAISERROR('Insufficient stock for this medicine', 16, 1)
-            RETURN
-        END
-
         IF @QuantitySold <= 0
         BEGIN
             ROLLBACK
@@ -377,6 +407,13 @@ BEGIN
         BEGIN
             ROLLBACK
             RAISERROR('Total amount must be greater than 0', 16, 1)
+            RETURN
+        END
+
+        IF (SELECT StockLevel FROM Medicines WHERE MedicineID = @MedicineID) < @QuantitySold
+        BEGIN
+            ROLLBACK
+            RAISERROR('Insufficient stock for this medicine', 16, 1)
             RETURN
         END
 
@@ -446,7 +483,7 @@ GO
 
 
 -- ============================================================
---  8. sp_ApproveRestock
+--  8. sp_ApproveRestock  ← FIXED: constraint + TRY/CATCH
 -- ============================================================
 DROP PROCEDURE IF EXISTS sp_ApproveRestock;
 GO
@@ -508,7 +545,7 @@ GO
 
 
 -- ============================================================
---  9. sp_CancelRestock
+--  9. sp_CancelRestock  ← FIXED: constraint + TRY/CATCH
 -- ============================================================
 DROP PROCEDURE IF EXISTS sp_CancelRestock;
 GO
@@ -687,10 +724,9 @@ GO
 
 
 -- ============================================================
---  TRIGGERS
+--  TRIGGERS  ← FIXED: SaleID column included correctly
 -- ============================================================
 
--- Drop triggers if they already exist
 IF OBJECT_ID('trg_LogSale', 'TR') IS NOT NULL
     DROP TRIGGER trg_LogSale;
 GO
@@ -700,33 +736,37 @@ IF OBJECT_ID('trg_LogRestock', 'TR') IS NOT NULL
 GO
 
 -- Trigger: auto log every new sale into Transactions
+-- SaleID is taken from the inserted sale row
 CREATE TRIGGER trg_LogSale
 ON Sales
 AFTER INSERT
 AS
 BEGIN
     SET NOCOUNT ON;
-    INSERT INTO Transactions (MedicineID, TransactionType, Quantity, Notes, TransactionDate)
+    INSERT INTO Transactions (MedicineID, SaleID, TransactionType, Quantity, Notes, TransactionDate)
     SELECT
-        MedicineID,
+        i.MedicineID,
+        i.SaleID,
         'SALE',
-        QuantitySold,
+        i.QuantitySold,
         'Sale recorded automatically',
         GETDATE()
-    FROM inserted
+    FROM inserted i
 END
 GO
 
 -- Trigger: auto log every approved restock into Transactions
+-- SaleID is NULL for restock entries since there is no sale involved
 CREATE TRIGGER trg_LogRestock
 ON Restock
 AFTER UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
-    INSERT INTO Transactions (MedicineID, TransactionType, Quantity, Notes, TransactionDate)
+    INSERT INTO Transactions (MedicineID, SaleID, TransactionType, Quantity, Notes, TransactionDate)
     SELECT
         i.MedicineID,
+        NULL,
         'RESTOCK',
         i.ReorderQuantity,
         'Restock approved automatically',
