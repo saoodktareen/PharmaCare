@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 const API = 'http://localhost:5000/api';
 
 function AuthPage({ onLogin }) {
-  const [mode, setMode] = useState('login'); // 'login' or 'signup'
+  const [mode, setMode] = useState('login');
   const [form, setForm] = useState({ FullName: '', Email: '', Password: '', Role: 'staff' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -18,7 +18,7 @@ function AuthPage({ onLogin }) {
     setLoading(true);
     try {
       const endpoint = mode === 'login' ? '/auth/login' : '/auth/register';
-        const res = await fetch(`${API}${endpoint}`, {
+      const res = await fetch(`${API}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form)
@@ -27,13 +27,11 @@ function AuthPage({ onLogin }) {
       if (!res.ok) return setError(data.error || 'Something went wrong');
 
       if (mode === 'signup') {
-        // After signup, auto switch to login
         setMode('login');
         setForm(f => ({ ...f, FullName: '', Password: '' }));
         setError('');
         alert('Account created! Please log in.');
       } else {
-        // Store user in localStorage so they stay logged in on refresh
         sessionStorage.setItem('pharmacare_user', JSON.stringify(data.user));
         onLogin(data.user);
       }
@@ -48,113 +46,141 @@ function AuthPage({ onLogin }) {
 
   return (
     <div style={styles.page}>
-      {/* Background grid */}
-      <div style={styles.grid} />
 
-      {/* Glowing orb */}
-      <div style={styles.orb} />
-
-      <div style={styles.card}>
-        {/* Logo */}
-        <div style={styles.logoRow}>
-          <div style={styles.logoIcon}>💊</div>
-          <div>
-            <div style={styles.logoName}>PharmaCare</div>
-            <div style={styles.logoSub}>Inventory Management System</div>
+      {/* Left panel — branding */}
+      <div style={styles.leftPanel}>
+        <div style={styles.brandContent}>
+          <div style={styles.brandIcon}>💊</div>
+          <h1 style={styles.brandName}>PharmaCare</h1>
+          <p style={styles.brandTagline}>Inventory Management System</p>
+          <div style={styles.featureList}>
+            {[
+              '🏥 Real-time stock tracking',
+              '📊 Sales & revenue reports',
+              '🔔 Low stock alerts',
+              '👥 Role-based access control',
+            ].map((f, i) => (
+              <div key={i} style={styles.featureItem}>{f}</div>
+            ))}
           </div>
         </div>
-
-        {/* Tab switcher */}
-        <div style={styles.tabs}>
-          <button
-            style={{ ...styles.tab, ...(mode === 'login' ? styles.tabActive : {}) }}
-            onClick={() => { setMode('login'); setError(''); }}
-          >
-            Sign In
-          </button>
-          <button
-            style={{ ...styles.tab, ...(mode === 'signup' ? styles.tabActive : {}) }}
-            onClick={() => { setMode('signup'); setError(''); }}
-          >
-            Register
-          </button>
+        <div style={styles.leftFooter}>
+          Trusted pharmacy management — secure, reliable, fast.
         </div>
+      </div>
 
-        {/* Form */}
-        <div style={styles.form}>
-          {mode === 'signup' && (
+      {/* Right panel — form */}
+      <div style={styles.rightPanel}>
+        <div style={styles.card}>
+
+          {/* Header */}
+          <div style={styles.cardHeader}>
+            <h2 style={styles.cardTitle}>
+              {mode === 'login' ? 'Welcome back' : 'Create account'}
+            </h2>
+            <p style={styles.cardSub}>
+              {mode === 'login'
+                ? 'Sign in to your PharmaCare account'
+                : 'Register a new account to get started'}
+            </p>
+          </div>
+
+          {/* Tab switcher */}
+          <div style={styles.tabs}>
+            <button
+              style={{ ...styles.tab, ...(mode === 'login' ? styles.tabActive : {}) }}
+              onClick={() => { setMode('login'); setError(''); }}
+            >
+              Sign In
+            </button>
+            <button
+              style={{ ...styles.tab, ...(mode === 'signup' ? styles.tabActive : {}) }}
+              onClick={() => { setMode('signup'); setError(''); }}
+            >
+              Register
+            </button>
+          </div>
+
+          {/* Form fields */}
+          <div style={styles.form}>
+            {mode === 'signup' && (
+              <div style={styles.fieldGroup}>
+                <label style={styles.label}>Full Name</label>
+                <input
+                  style={styles.input}
+                  placeholder="John Doe"
+                  value={form.FullName}
+                  onChange={e => update('FullName', e.target.value)}
+                  onKeyDown={handleKey}
+                />
+              </div>
+            )}
+
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>FULL NAME</label>
+              <label style={styles.label}>Email Address</label>
               <input
                 style={styles.input}
-                placeholder="John Doe"
-                value={form.FullName}
-                onChange={e => update('FullName', e.target.value)}
+                type="email"
+                placeholder="you@example.com"
+                value={form.Email}
+                onChange={e => update('Email', e.target.value)}
                 onKeyDown={handleKey}
               />
             </div>
-          )}
 
-          <div style={styles.fieldGroup}>
-            <label style={styles.label}>EMAIL</label>
-            <input
-              style={styles.input}
-              type="email"
-              placeholder="you@example.com"
-              value={form.Email}
-              onChange={e => update('Email', e.target.value)}
-              onKeyDown={handleKey}
-            />
-          </div>
-
-          <div style={styles.fieldGroup}>
-            <label style={styles.label}>PASSWORD</label>
-            <input
-              style={styles.input}
-              type="password"
-              placeholder="••••••••"
-              value={form.Password}
-              onChange={e => update('Password', e.target.value)}
-              onKeyDown={handleKey}
-            />
-          </div>
-
-          {mode === 'signup' && (
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>ROLE</label>
-              <select
+              <label style={styles.label}>Password</label>
+              <input
                 style={styles.input}
-                value={form.Role}
-                onChange={e => update('Role', e.target.value)}
-              >
-                <option value="staff">Staff</option>
-                <option value="admin">Admin</option>
-              </select>
+                type="password"
+                placeholder="••••••••"
+                value={form.Password}
+                onChange={e => update('Password', e.target.value)}
+                onKeyDown={handleKey}
+              />
             </div>
-          )}
 
-          {error && (
-            <div style={styles.errorBox}>
-              ⚠️ {error}
-            </div>
-          )}
+            {mode === 'signup' && (
+              <div style={styles.fieldGroup}>
+                <label style={styles.label}>Role</label>
+                <select
+                  style={styles.input}
+                  value={form.Role}
+                  onChange={e => update('Role', e.target.value)}
+                >
+                  <option value="staff">Staff</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+            )}
 
-          <button
-            style={{ ...styles.submitBtn, opacity: loading ? 0.6 : 1 }}
-            onClick={handleSubmit}
-            disabled={loading}
-          >
-            {loading ? 'Please wait...' : mode === 'login' ? 'Sign In →' : 'Create Account →'}
-          </button>
+            {error && (
+              <div style={styles.errorBox}>
+                ⚠️ {error}
+              </div>
+            )}
 
-          {mode === 'login' && (
-            <div style={styles.hint}>
-              <span style={{ color: '#3d5068' }}>Default admin: </span>
-              <span style={{ color: '#00d4ff', fontFamily: 'monospace', fontSize: '0.78rem' }}>
-                admin@pharmacare.com / admin123
-              </span>
-            </div>
-          )}
+            <button
+              style={{ ...styles.submitBtn, opacity: loading ? 0.7 : 1 }}
+              onClick={handleSubmit}
+              disabled={loading}
+            >
+              {loading
+                ? '⏳ Please wait...'
+                : mode === 'login'
+                  ? 'Sign In →'
+                  : 'Create Account →'}
+            </button>
+
+            {mode === 'login' && (
+              <div style={styles.hint}>
+                <span style={{ color: '#94a3b8' }}>Default admin: </span>
+                <span style={{ color: '#0ea5e9', fontFamily: 'monospace', fontSize: '0.78rem' }}>
+                  admin@pharmacare.com / admin123
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -164,123 +190,178 @@ function AuthPage({ onLogin }) {
 const styles = {
   page: {
     minHeight: '100vh',
-    background: '#090b10',
+    display: 'flex',
+    fontFamily: "'Plus Jakarta Sans', sans-serif",
+    background: '#f0f4f8',
+  },
+
+  // ── Left branding panel ──
+  leftPanel: {
+    flex: '1',
+    background: 'linear-gradient(160deg, #0a2540 0%, #0d3460 60%, #1a4f8a 100%)',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'space-between',
+    padding: '60px 56px',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  brandContent: {
+    position: 'relative', zIndex: 1,
+  },
+  brandIcon: {
+    width: '64px', height: '64px',
+    background: 'rgba(14,165,233,0.15)',
+    border: '1px solid rgba(14,165,233,0.3)',
+    borderRadius: '16px',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: '30px',
+    marginBottom: '28px',
+    boxShadow: '0 8px 24px rgba(14,165,233,0.2)',
+  },
+  brandName: {
+    fontSize: '2.4rem',
+    fontWeight: 800,
+    color: '#ffffff',
+    letterSpacing: '-0.03em',
+    marginBottom: '8px',
+    lineHeight: 1,
+  },
+  brandTagline: {
+    fontSize: '0.95rem',
+    color: 'rgba(148,163,184,0.8)',
+    marginBottom: '48px',
+    fontWeight: 400,
+  },
+  featureList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+  },
+  featureItem: {
+    fontSize: '0.9rem',
+    color: 'rgba(226,232,240,0.85)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    fontWeight: 500,
+  },
+  leftFooter: {
+    fontSize: '0.78rem',
+    color: 'rgba(148,163,184,0.5)',
+    position: 'relative', zIndex: 1,
+  },
+
+  // ── Right form panel ──
+  rightPanel: {
+    width: '480px',
+    minWidth: '480px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    position: 'relative',
-    overflow: 'hidden',
-    fontFamily: "'DM Sans', sans-serif",
-  },
-  grid: {
-    position: 'fixed', inset: 0,
-    backgroundImage: 'linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px)',
-    backgroundSize: '40px 40px',
-    pointerEvents: 'none',
-  },
-  orb: {
-    position: 'absolute',
-    top: '-100px', left: '50%',
-    transform: 'translateX(-50%)',
-    width: '600px', height: '600px',
-    borderRadius: '50%',
-    background: 'radial-gradient(circle, rgba(0,212,255,0.08) 0%, transparent 70%)',
-    pointerEvents: 'none',
+    padding: '40px 48px',
+    background: '#f0f4f8',
   },
   card: {
-    position: 'relative', zIndex: 1,
-    background: '#0f1218',
-    border: '1px solid #1e2838',
+    width: '100%',
+    background: '#ffffff',
     borderRadius: '20px',
-    padding: '40px',
-    width: '100%', maxWidth: '420px',
-    boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
+    padding: '36px',
+    boxShadow: '0 4px 24px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04)',
+    border: '1px solid #e2e8f0',
   },
-  logoRow: {
-    display: 'flex', alignItems: 'center', gap: '14px',
-    marginBottom: '32px',
+  cardHeader: {
+    marginBottom: '24px',
   },
-  logoIcon: {
-    width: '46px', height: '46px',
-    background: 'rgba(0,212,255,0.1)',
-    border: '1px solid rgba(0,212,255,0.3)',
-    borderRadius: '10px',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontSize: '22px',
-    boxShadow: '0 0 16px rgba(0,212,255,0.2)',
+  cardTitle: {
+    fontSize: '1.5rem',
+    fontWeight: 800,
+    color: '#0f172a',
+    letterSpacing: '-0.02em',
+    marginBottom: '6px',
   },
-  logoName: {
-    fontFamily: "'Syne', sans-serif",
-    fontSize: '1.2rem', fontWeight: 800,
-    color: '#e8edf5', letterSpacing: '-0.02em',
+  cardSub: {
+    fontSize: '0.85rem',
+    color: '#94a3b8',
+    fontWeight: 400,
   },
-  logoSub: {
-    fontSize: '0.72rem', color: '#3d5068',
-    letterSpacing: '0.04em', marginTop: '2px',
-  },
+
+  // ── Tabs ──
   tabs: {
     display: 'flex',
-    background: '#141920',
-    borderRadius: '8px',
+    background: '#f1f5f9',
+    borderRadius: '10px',
     padding: '4px',
-    marginBottom: '28px',
-    border: '1px solid #1e2838',
+    marginBottom: '24px',
+    border: '1px solid #e2e8f0',
   },
   tab: {
-    flex: 1, padding: '9px',
-    border: 'none', borderRadius: '6px',
-    background: 'none', color: '#3d5068',
-    cursor: 'pointer', fontFamily: "'Syne', sans-serif",
-    fontSize: '0.82rem', fontWeight: 700,
-    letterSpacing: '0.03em', transition: 'all 0.2s',
+    flex: 1,
+    padding: '9px',
+    border: 'none',
+    borderRadius: '7px',
+    background: 'none',
+    color: '#94a3b8',
+    cursor: 'pointer',
+    fontFamily: "'Plus Jakarta Sans', sans-serif",
+    fontSize: '0.85rem',
+    fontWeight: 600,
+    transition: 'all 0.2s',
   },
   tabActive: {
-    background: '#1a2230',
-    color: '#00d4ff',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+    background: '#ffffff',
+    color: '#0ea5e9',
+    boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
   },
+
+  // ── Form ──
   form: { display: 'flex', flexDirection: 'column', gap: '16px' },
   fieldGroup: { display: 'flex', flexDirection: 'column', gap: '6px' },
   label: {
-    fontSize: '0.68rem', fontWeight: 700,
-    color: '#3d5068', letterSpacing: '0.1em',
-    fontFamily: "'Syne', sans-serif",
+    fontSize: '0.75rem',
+    fontWeight: 700,
+    color: '#475569',
+    letterSpacing: '0.04em',
   },
   input: {
     padding: '11px 14px',
-    background: '#141920',
-    border: '1px solid #1e2838',
+    background: '#f8fafc',
+    border: '1.5px solid #e2e8f0',
     borderRadius: '8px',
-    color: '#e8edf5',
-    fontFamily: "'DM Sans', sans-serif",
+    color: '#0f172a',
+    fontFamily: "'Plus Jakarta Sans', sans-serif",
     fontSize: '0.9rem',
     outline: 'none',
     transition: 'border 0.2s',
     width: '100%',
   },
   errorBox: {
-    background: 'rgba(255,77,106,0.1)',
-    border: '1px solid rgba(255,77,106,0.2)',
+    background: '#fef2f2',
+    border: '1px solid #fecaca',
     borderRadius: '8px',
     padding: '10px 14px',
-    color: '#ff4d6a',
+    color: '#991b1b',
     fontSize: '0.83rem',
+    fontWeight: 500,
   },
   submitBtn: {
     padding: '13px',
-    background: '#00d4ff',
-    border: 'none', borderRadius: '8px',
-    color: '#000',
-    fontFamily: "'Syne', sans-serif",
-    fontSize: '0.88rem', fontWeight: 800,
-    letterSpacing: '0.03em',
+    background: 'linear-gradient(135deg, #0ea5e9, #0284c7)',
+    border: 'none',
+    borderRadius: '8px',
+    color: '#ffffff',
+    fontFamily: "'Plus Jakarta Sans', sans-serif",
+    fontSize: '0.9rem',
+    fontWeight: 700,
     cursor: 'pointer',
-    boxShadow: '0 4px 20px rgba(0,212,255,0.3)',
+    boxShadow: '0 4px 14px rgba(14,165,233,0.35)',
     transition: 'all 0.2s',
     marginTop: '4px',
+    letterSpacing: '0.01em',
   },
   hint: {
-    textAlign: 'center', fontSize: '0.8rem',
+    textAlign: 'center',
+    fontSize: '0.78rem',
     marginTop: '4px',
   },
 };
