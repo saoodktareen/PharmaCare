@@ -1,16 +1,15 @@
 import React, { useEffect, useState } from 'react';
 
 const API = 'http://localhost:5000/api';
-
 const emptyItem = { MedicineID: '', QuantitySold: '', TotalAmount: '' };
 
-function Sales() {
+function Sales({ user }) {
   const [sales, setSales] = useState([]);
   const [medicines, setMedicines] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [customerID, setCustomerID] = useState('');
-  const [items, setItems] = useState([{ ...emptyItem }]); // list of medicine rows
-  const [message, setMessage] = useState('');
+  const [items, setItems] = useState([{ ...emptyItem }]);
+  const [message, setMessage] = useState({ text: '', type: '' }); // type: 'success' | 'error'
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
 
@@ -27,7 +26,12 @@ function Sales() {
 
   useEffect(() => { load(); }, []);
 
-  // Update a specific row's medicine and recalculate total
+  const showMsg = (text, type = 'error') => {
+    setMessage({ text, type });
+    // Only auto-clear success messages; keep errors visible until user acts
+    if (type === 'success') setTimeout(() => setMessage({ text: '', type: '' }), 5000);
+  };
+
   const handleItemMedicine = (index, medicineID) => {
     const med = medicines.find(m => m.MedicineID === parseInt(medicineID));
     const qty = parseInt(items[index].QuantitySold) || 0;
@@ -38,9 +42,10 @@ function Sales() {
       TotalAmount: med && qty ? (med.Price * qty).toFixed(2) : ''
     };
     setItems(updated);
+    // Clear any existing error when user changes selection
+    setMessage({ text: '', type: '' });
   };
 
-  // Update a specific row's quantity and recalculate total
   const handleItemQty = (index, qty) => {
     const med = medicines.find(m => m.MedicineID === parseInt(items[index].MedicineID));
     const updated = [...items];
@@ -50,45 +55,76 @@ function Sales() {
       TotalAmount: med && qty ? (med.Price * parseInt(qty)).toFixed(2) : ''
     };
     setItems(updated);
+
+    // Immediate frontend stock warning as user types
+    if (med && parseInt(qty) > med.StockLevel) {
+      setMessage({
+        text: `⚠️ "${med.MedicineName}" only has ${med.StockLevel} units in stock`,
+        type: 'error'
+      });
+    } else {
+      setMessage({ text: '', type: '' });
+    }
   };
 
-  // Add a new empty medicine row
   const addRow = () => setItems(prev => [...prev, { ...emptyItem }]);
 
-  // Remove a row (keep at least 1)
   const removeRow = (index) => {
     if (items.length === 1) return;
     setItems(prev => prev.filter((_, i) => i !== index));
+    setMessage({ text: '', type: '' });
   };
 
   const grandTotal = items.reduce((sum, it) => sum + (parseFloat(it.TotalAmount) || 0), 0);
 
   const handleSubmit = async () => {
-    if (!customerID) return setMessage('Please select a customer');
+    // ── Frontend validation ──────────────────────────────────
+    if (!customerID) {
+      return showMsg('Please select a customer before saving.');
+    }
     if (items.some(it => !it.MedicineID || !it.QuantitySold)) {
-      return setMessage('Please fill in all medicine rows');
+      return showMsg('Please fill in all medicine rows completely.');
     }
 
-    const res = await fetch(`${API}/sales/bulk`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ CustomerID: customerID, items })
-    });
-    const data = await res.json();
-    setMessage(data.message || data.error);
-    if (res.ok) {
+    // Stock check against live medicine data before hitting the server
+    for (const item of items) {
+      const med = medicines.find(m => m.MedicineID === parseInt(item.MedicineID));
+      if (med && parseInt(item.QuantitySold) > med.StockLevel) {
+        return showMsg(
+          `Insufficient stock for "${med.MedicineName}" — only ${med.StockLevel} unit(s) available, you entered ${item.QuantitySold}.`
+        );
+      }
+    }
+
+    // ── Submit to backend ────────────────────────────────────
+    try {
+      const res = await fetch(`${API}/sales/bulk`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ CustomerID: customerID, items })
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        // Server-side error (e.g. race condition where stock ran out between check and save)
+        return showMsg(data.error || 'Failed to record sale. Please try again.');
+      }
+
+      showMsg(data.message || 'Sale recorded successfully', 'success');
       setCustomerID('');
       setItems([{ ...emptyItem }]);
       setShowForm(false);
       load();
+    } catch {
+      showMsg('Cannot connect to server. Is your backend running?');
     }
-    setTimeout(() => setMessage(''), 4000);
   };
 
   const cancelForm = () => {
     setShowForm(false);
     setCustomerID('');
     setItems([{ ...emptyItem }]);
+    setMessage({ text: '', type: '' });
   };
 
   if (loading) return <div className="loading">Loading sales</div>;
@@ -107,9 +143,19 @@ function Sales() {
         </button>
       </div>
 
-      {message && (
-        <div className={`alert ${message.includes('success') ? 'alert-success' : 'alert-error'}`}>
-          {message.includes('success') ? '✅' : '❌'} {message}
+      {/* ── Alert banner — stays visible until resolved ── */}
+      {message.text && (
+        <div
+          className={`alert ${message.type === 'success' ? 'alert-success' : 'alert-error'}`}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+        >
+          <span>{message.type === 'success' ? '✅' : '❌'} {message.text}</span>
+          <button
+            onClick={() => setMessage({ text: '', type: '' })}
+            style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '1rem', marginLeft: 12 }}
+          >
+            ✕
+          </button>
         </div>
       )}
 
@@ -117,7 +163,6 @@ function Sales() {
         <div className="form-panel">
           <div className="form-panel-title">➕ Record New Sale</div>
 
-          {/* Customer selector — once for the whole sale */}
           <div className="form-row" style={{ marginBottom: 20 }}>
             <div className="form-group">
               <label>Customer</label>
@@ -130,20 +175,22 @@ function Sales() {
             </div>
           </div>
 
-          {/* Medicine rows */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
             {items.map((item, index) => {
-              medicines.find(m => m.MedicineID === parseInt(item.MedicineID));
+              const selectedMed = medicines.find(m => m.MedicineID === parseInt(item.MedicineID));
+              const overStock = selectedMed && parseInt(item.QuantitySold) > selectedMed.StockLevel;
+
               return (
                 <div key={index} style={{
                   display: 'grid',
                   gridTemplateColumns: '2fr 1fr 1fr auto',
                   gap: 10,
                   alignItems: 'end',
-                  background: 'var(--bg-secondary, #141920)',
-                  border: '1px solid var(--border, #1e2838)',
+                  background: overStock ? 'rgba(255,77,106,0.07)' : 'var(--bg-secondary, #141920)',
+                  border: `1px solid ${overStock ? 'rgba(255,77,106,0.4)' : 'var(--border, #1e2838)'}`,
                   borderRadius: 8,
-                  padding: '12px 14px'
+                  padding: '12px 14px',
+                  transition: 'all 0.2s'
                 }}>
                   <div className="form-group" style={{ margin: 0 }}>
                     <label>Medicine {index + 1}</label>
@@ -158,13 +205,16 @@ function Sales() {
                   </div>
 
                   <div className="form-group" style={{ margin: 0 }}>
-                    <label>Quantity</label>
+                    <label style={{ color: overStock ? '#ff4d6a' : undefined }}>
+                      Quantity {overStock && `(max ${selectedMed.StockLevel})`}
+                    </label>
                     <input
                       type="number"
                       value={item.QuantitySold}
                       onChange={e => handleItemQty(index, e.target.value)}
                       placeholder="0"
                       min="1"
+                      style={{ borderColor: overStock ? 'rgba(255,77,106,0.6)' : undefined }}
                     />
                   </div>
 
@@ -195,7 +245,6 @@ function Sales() {
             })}
           </div>
 
-          {/* Add row + grand total + submit */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
             <button className="btn btn-ghost" onClick={addRow}>+ Add Another Medicine</button>
             <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--green, #00c48c)' }}>
@@ -204,13 +253,21 @@ function Sales() {
           </div>
 
           <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-            <button className="btn btn-primary" onClick={handleSubmit}>💾 Save Sale</button>
+            <button
+              className="btn btn-primary"
+              onClick={handleSubmit}
+              disabled={items.some(it => {
+                const med = medicines.find(m => m.MedicineID === parseInt(it.MedicineID));
+                return med && parseInt(it.QuantitySold) > med.StockLevel;
+              })}
+            >
+              💾 Save Sale
+            </button>
             <button className="btn btn-ghost" onClick={cancelForm}>Cancel</button>
           </div>
         </div>
       )}
 
-      {/* Sales table */}
       <div className="panel">
         <div className="panel-header">
           <span className="panel-title">🛒 All Sales</span>
