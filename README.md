@@ -22,6 +22,22 @@ A full-stack pharmacy inventory system built with React, Node.js/Express, and Mi
 
 ---
 
+## Environment Setup
+
+Before running the backend, create a `.env` file inside the `backend/` folder with the following:
+
+```
+DB_SERVER=localhost
+DB_NAME=PharmacyInventoryDB
+DB_USER=sa
+DB_PASSWORD=your_sql_server_password
+PORT=5000
+```
+
+Replace `your_sql_server_password` with your actual SQL Server `sa` account password. If you use a different SQL Server login, replace `sa` with that username too.
+
+---
+
 ## Setup & Running
 
 ### 1. Backend
@@ -31,6 +47,12 @@ npm install
 node server.js
 ```
 Server runs on **http://localhost:5000**
+
+You should see:
+```
+✅ Connected to SQL Server!
+🚀 Server running on http://localhost:5000
+```
 
 ### 2. Frontend
 Open a second terminal:
@@ -55,7 +77,8 @@ Password: admin123
 ```
 PharmaCare/
 ├── backend/
-│   └── server.js       # Express API + SQL Server connection
+│   ├── server.js       # Express API + SQL Server connection
+│   └── .env            # Database credentials (create this manually)
 └── frontend/
     └── src/
         ├── App.js
