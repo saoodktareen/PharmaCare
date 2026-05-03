@@ -61,6 +61,8 @@ body::before {
   display: flex; flex-direction: column;
   position: fixed; top: 0; left: 0; height: 100vh;
   z-index: 100; overflow: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
 }
 .sidebar::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
