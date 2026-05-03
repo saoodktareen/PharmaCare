@@ -1,0 +1,91 @@
+
+CREATE TABLE Categories
+(
+  CategoryID   INT          NULL    ,
+  CategoryName VARCHAR(100) NOT NULL,
+  Description  VARCHAR(255) NULL    ,
+  PRIMARY KEY (CategoryID)
+);
+
+CREATE TABLE Customers
+(
+  CustomerID   INT          NULL    ,
+  CustomerName VARCHAR(150) NOT NULL,
+  Phone        VARCHAR(20)  NULL    ,
+  Email        VARCHAR(100) NULL    ,
+  PRIMARY KEY (CustomerID)
+);
+
+CREATE TABLE Medicines
+(
+  MedicineID        INT           NULL    ,
+  MedicineName      VARCHAR(150)  NOT NULL,
+  CategoryID        INT           NULL    ,
+  SupplierID        INT           NULL    ,
+  BatchNumber       VARCHAR(50)   NOT NULL,
+  ExpiryDate        DATE          NOT NULL,
+  Price             DECIMAL(10,2) NOT NULL,
+  StockLevel        INT           NOT NULL,
+  MinimumStockLevel INT           NULL     DEFAULT 10,
+  ON                SET           NULL    ,
+  ON                SET           NULL    ,
+  PRIMARY KEY (MedicineID)
+);
+
+CREATE TABLE Restock
+(
+  MedicineID  NULL    
+);
+
+CREATE TABLE Sales
+(
+  SaleID       INT           NULL    ,
+  MedicineID   INT           NOT NULL,
+  CustomerID   INT           NULL    ,
+  QuantitySold INT           NOT NULL,
+  SaleDate     DATETIME      NULL     DEFAULT GETDATE,
+  TotalAmount  DECIMAL(10,2) NULL    ,
+  ON                         NULL    ,
+  ON           SET           NULL    ,
+  PRIMARY KEY (SaleID)
+);
+
+CREATE TABLE Suppliers
+(
+  SupplierID   INT          NULL    ,
+  SupplierName VARCHAR(150) NOT NULL,
+  Phone        VARCHAR(20)  NULL    ,
+  Email        VARCHAR(100) NULL    ,
+  Address      VARCHAR(255) NULL    ,
+  PRIMARY KEY (SupplierID)
+);
+
+CREATE TABLE Transactions
+(
+  MedicineID  NULL    
+);
+
+CREATE TABLE Users
+(
+  2  NULL    
+);
+
+ALTER TABLE Medicines
+  ADD CONSTRAINT FK_Categories_TO_Medicines
+    FOREIGN KEY (CategoryID)
+    REFERENCES Categories (CategoryID);
+
+ALTER TABLE Medicines
+  ADD CONSTRAINT FK_Suppliers_TO_Medicines
+    FOREIGN KEY (SupplierID)
+    REFERENCES Suppliers (SupplierID);
+
+ALTER TABLE Sales
+  ADD CONSTRAINT FK_Medicines_TO_Sales
+    FOREIGN KEY (MedicineID)
+    REFERENCES Medicines (MedicineID);
+
+ALTER TABLE Sales
+  ADD CONSTRAINT FK_Customers_TO_Sales
+    FOREIGN KEY (CustomerID)
+    REFERENCES Customers (CustomerID);
