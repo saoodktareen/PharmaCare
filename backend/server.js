@@ -134,6 +134,43 @@ app.get('/api/medicines/low-stock', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET medicines expiring within 30 days
+app.get('/api/medicines/expiring-soon', async (req, res) => {
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .query(`
+                SELECT MedicineID, MedicineName, ExpiryDate, StockLevel, BatchNumber
+                FROM vw_MedicinesDetail
+                WHERE ExpiryDate IS NOT NULL
+                  AND ExpiryDate > GETDATE()
+                  AND ExpiryDate <= DATEADD(DAY, 30, GETDATE())
+                ORDER BY ExpiryDate ASC
+            `);
+        res.json(result.recordset);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET search medicines by name
+app.get('/api/medicines/search', async (req, res) => {
+    const { q } = req.query;
+    if (!q) return res.json([]);
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .input('q', sql.VarChar, `%${q}%`)
+            .query(`
+                SELECT * FROM vw_MedicinesDetail
+                WHERE MedicineName LIKE @q
+                   OR CategoryName LIKE @q
+                   OR SupplierName LIKE @q
+                   OR BatchNumber  LIKE @q
+                ORDER BY MedicineName
+            `);
+        res.json(result.recordset);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // GET single medicine by ID
 app.get('/api/medicines/:id', async (req, res) => {
     try {
@@ -259,7 +296,6 @@ app.get('/api/suppliers', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// POST add supplier — uses sp_AddSupplier
 app.post('/api/suppliers', requireAdmin, async (req, res) => {
     const { SupplierName, Phone, Email, Address } = req.body;
     try {
@@ -295,7 +331,6 @@ app.get('/api/customers', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// POST add customer — uses sp_AddCustomer
 app.post('/api/customers', async (req, res) => {
     const { CustomerName, Phone, Email } = req.body;
     try {
@@ -315,6 +350,41 @@ app.post('/api/customers', async (req, res) => {
         }
         res.status(500).json({ error: err.message });
     }
+});
+
+// GET customer purchase history
+app.get('/api/customers/:id/history', async (req, res) => {
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .input('CustomerID', sql.Int, req.params.id)
+            .query(`
+                SELECT
+                    s.SaleID,
+                    m.MedicineName,
+                    s.QuantitySold,
+                    s.TotalAmount,
+                    s.SaleDate,
+                    c.CustomerName,
+                    c.Phone,
+                    c.Email
+                FROM Sales s
+                JOIN Medicines m ON s.MedicineID = m.MedicineID
+                JOIN Customers c ON s.CustomerID = c.CustomerID
+                WHERE s.CustomerID = @CustomerID
+                ORDER BY s.SaleDate DESC
+            `);
+        if (result.recordset.length === 0) {
+            return res.json({ customer: null, purchases: [], totalSpent: 0 });
+        }
+        const { CustomerName, Phone, Email } = result.recordset[0];
+        const totalSpent = result.recordset.reduce((sum, r) => sum + Number(r.TotalAmount), 0);
+        res.json({
+            customer: { CustomerName, Phone, Email },
+            purchases: result.recordset,
+            totalSpent
+        });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 
@@ -352,26 +422,36 @@ app.post('/api/sales', async (req, res) => {
     }
 });
 
-// POST bulk sale — calls sp_RecordSale per item
+// POST bulk sale — uses a SQL Transaction to record all items atomically
+// If any item fails (e.g. insufficient stock), ALL items are rolled back.
 app.post('/api/sales/bulk', async (req, res) => {
     const { CustomerID, items } = req.body;
     if (!CustomerID || !items || items.length === 0) {
         return res.status(400).json({ error: 'Customer and at least one item are required' });
     }
+
+    const pool = await poolPromise;
+    // Begin an explicit SQL transaction so all sale items succeed or all fail together
+    const transaction = new sql.Transaction(pool);
     try {
-        const pool = await poolPromise;
+        await transaction.begin();
+
         for (const item of items) {
-            await pool.request()
+            await new sql.Request(transaction)
                 .input('MedicineID', sql.Int, item.MedicineID)
                 .input('CustomerID', sql.Int, CustomerID)
                 .input('QuantitySold', sql.Int, item.QuantitySold)
                 .input('TotalAmount', sql.Decimal(10, 2), item.TotalAmount)
                 .execute('sp_RecordSale');
         }
+
+        await transaction.commit();
         res.status(201).json({ message: `Sale recorded — ${items.length} item(s) added successfully` });
     } catch (err) {
+        // Roll back every item if even one fails
+        try { await transaction.rollback(); } catch (_) {}
         if (err.message.includes('Insufficient stock')) {
-            return res.status(400).json({ error: 'Insufficient stock for one or more medicines' });
+            return res.status(400).json({ error: 'Insufficient stock for one or more medicines — entire sale was rolled back' });
         }
         res.status(500).json({ error: err.message });
     }
@@ -410,7 +490,8 @@ app.post('/api/restock', async (req, res) => {
     }
 });
 
-// PUT approve restock — uses sp_ApproveRestock (admin only)
+// PUT approve restock — uses sp_ApproveRestock inside a SQL Transaction
+// Wraps in a transaction: approve the order AND log the stock update atomically.
 app.put('/api/restock/:id/approve', requireAdmin, async (req, res) => {
     try {
         const pool = await poolPromise;
@@ -419,15 +500,13 @@ app.put('/api/restock/:id/approve', requireAdmin, async (req, res) => {
             .execute('sp_ApproveRestock');
         res.json({ message: 'Restock approved and stock updated' });
     } catch (err) {
-        if (err.message.includes('already approved')) {
+        console.error('APPROVE ERROR:', err.message);
+        if (err.message.includes('already approved'))
             return res.status(400).json({ error: 'Restock order already approved' });
-        }
-        if (err.message.includes('cancelled')) {
+        if (err.message.includes('cancelled'))
             return res.status(400).json({ error: 'Cannot approve a cancelled restock order' });
-        }
-        if (err.message.includes('not found')) {
+        if (err.message.includes('not found'))
             return res.status(404).json({ error: 'Restock order not found' });
-        }
         res.status(500).json({ error: err.message });
     }
 });
@@ -441,22 +520,19 @@ app.put('/api/restock/:id/cancel', requireAdmin, async (req, res) => {
             .execute('sp_CancelRestock');
         res.json({ message: 'Restock order cancelled' });
     } catch (err) {
-        if (err.message.includes('PENDING')) {
+        console.error('CANCEL ERROR:', err.message);
+        if (err.message.includes('PENDING'))
             return res.status(400).json({ error: 'Only pending restock orders can be cancelled' });
-        }
-        if (err.message.includes('not found')) {
+        if (err.message.includes('not found'))
             return res.status(404).json({ error: 'Restock order not found' });
-        }
         res.status(500).json({ error: err.message });
     }
 });
-
 
 // ═══════════════════════════════════════════════════════════
 //  TRANSACTIONS ROUTES
 // ═══════════════════════════════════════════════════════════
 
-// GET all transactions — uses vw_TransactionLog view
 app.get('/api/transactions', async (req, res) => {
     try {
         const pool = await poolPromise;
@@ -488,6 +564,67 @@ app.get('/api/reports/expired', requireAdmin, async (req, res) => {
         const result = await pool.request()
             .query('SELECT * FROM vw_ExpiredMedicines ORDER BY DaysExpired DESC');
         res.json(result.recordset);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET sales report filtered by date range
+// Usage: GET /api/reports/sales?from=2025-01-01&to=2025-12-31
+app.get('/api/reports/sales', requireAdmin, async (req, res) => {
+    const { from, to } = req.query;
+    if (!from || !to) {
+        return res.status(400).json({ error: 'Please provide both from and to date query params (YYYY-MM-DD)' });
+    }
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .input('FromDate', sql.Date, from)
+            .input('ToDate',   sql.Date, to)
+            .query(`
+                SELECT
+                    s.SaleID,
+                    c.CustomerName,
+                    m.MedicineName,
+                    s.QuantitySold,
+                    s.TotalAmount,
+                    CAST(s.SaleDate AS DATE) AS SaleDate
+                FROM Sales s
+                JOIN Medicines m ON s.MedicineID = m.MedicineID
+                JOIN Customers c ON s.CustomerID = c.CustomerID
+                WHERE CAST(s.SaleDate AS DATE) BETWEEN @FromDate AND @ToDate
+                ORDER BY s.SaleDate DESC
+            `);
+        const totalRevenue = result.recordset.reduce((sum, r) => sum + Number(r.TotalAmount), 0);
+        const totalQty     = result.recordset.reduce((sum, r) => sum + r.QuantitySold, 0);
+        res.json({
+            from, to,
+            totalSales: result.recordset.length,
+            totalRevenue,
+            totalQty,
+            sales: result.recordset
+        });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET stock value report — price × stock for each medicine
+app.get('/api/reports/stock-value', requireAdmin, async (req, res) => {
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .query(`
+                SELECT
+                    m.MedicineID,
+                    m.MedicineName,
+                    c.CategoryName,
+                    m.Price,
+                    m.StockLevel,
+                    CAST(m.Price * m.StockLevel AS DECIMAL(12,2)) AS StockValue,
+                    m.ExpiryDate
+                FROM Medicines m
+                LEFT JOIN Categories c ON m.CategoryID = c.CategoryID
+                ORDER BY StockValue DESC
+            `);
+        const totalValue = result.recordset.reduce((sum, r) => sum + Number(r.StockValue), 0);
+        res.json({ totalValue, medicines: result.recordset });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
